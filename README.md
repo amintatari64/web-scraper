@@ -24,6 +24,7 @@ Every change is logged, the HTML is saved, and notifications are sent via **ntfy
 ---
 
 ## Usage
+- Set the **ntfy** settings in config.php and then run the **index.php**
 - Use the **Check Now** button on the dashboard to manually check sites.
 - Use **Add New Site** to add a website.
 - Use the delete button in the table to remove a site.
