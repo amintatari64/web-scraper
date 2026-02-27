@@ -86,6 +86,29 @@ function fetch_with_curl($url, $timeout = 30) {
     return null;
 }
 
+function is_blocked_or_invalid_snapshot($html) {
+    if (!is_string($html)) {
+        return true;
+    }
+
+    $normalized = strtolower($html);
+    $blockedMarkers = [
+        'unavailable for legal reasons',
+        'error 451',
+        'http 451',
+        'access denied',
+        'request blocked'
+    ];
+
+    foreach ($blockedMarkers as $marker) {
+        if (strpos($normalized, $marker) !== false) {
+            return true;
+        }
+    }
+
+    return trim($html) === '';
+}
+
 function fetch_remote_html($url, &$methodUsed = null) {
     // Try both URL styles because some hosts/proxies are picky.
     $renderCandidates = [
@@ -95,13 +118,13 @@ function fetch_remote_html($url, &$methodUsed = null) {
 
     foreach ($renderCandidates as $renderUrl) {
         $html = fetch_with_file_get_contents($renderUrl, 30);
-        if ($html !== null) {
+        if ($html !== null && !is_blocked_or_invalid_snapshot($html)) {
             $methodUsed = "r.jina.ai:file_get_contents";
             return $html;
         }
 
         $html = fetch_with_curl($renderUrl, 30);
-        if ($html !== null) {
+        if ($html !== null && !is_blocked_or_invalid_snapshot($html)) {
             $methodUsed = "r.jina.ai:curl";
             return $html;
         }
@@ -109,13 +132,13 @@ function fetch_remote_html($url, &$methodUsed = null) {
 
     // Last resort: fetch original URL directly so check process does not stop on cPanel.
     $html = fetch_with_file_get_contents($url, 30);
-    if ($html !== null) {
+    if ($html !== null && !is_blocked_or_invalid_snapshot($html)) {
         $methodUsed = "direct:file_get_contents";
         return $html;
     }
 
     $html = fetch_with_curl($url, 30);
-    if ($html !== null) {
+    if ($html !== null && !is_blocked_or_invalid_snapshot($html)) {
         $methodUsed = "direct:curl";
         return $html;
     }
