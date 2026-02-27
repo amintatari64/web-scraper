@@ -24,21 +24,103 @@ function send_ntfy_notification($topic, $message) {
     @file_get_contents($url, false, $context);
 }
 
-// Function to fetch rendered HTML (supports AJAX content)
-function fetch_rendered_html($url, $waitSeconds = 2) {
+function is_shell_exec_available() {
+    if (!function_exists('shell_exec')) {
+        return false;
+    }
+
+    $disabled = ini_get('disable_functions');
+    if (!is_string($disabled) || trim($disabled) === '') {
+        return true;
+    }
+
+    $disabledFunctions = array_map('trim', explode(',', $disabled));
+    return !in_array('shell_exec', $disabledFunctions, true);
+}
+
+function fetch_remote_html($url) {
     $renderUrl = "https://r.jina.ai/" . urlencode($url);
     $opts = [
         'http' => [
             'method' => 'GET',
-            'header' => "User-Agent: php-watch-script/2.0\r\n",
+            'header' => "User-Agent: php-watch-script/2.1\r\n",
             'timeout' => 30
         ]
     ];
+
     $context = stream_context_create($opts);
     $html = @file_get_contents($renderUrl, false, $context);
-    if ($html === false) throw new Exception("Failed to fetch page.");
-    sleep($waitSeconds); // Wait additional seconds after render
+    if ($html === false) {
+        throw new Exception("Failed to fetch page from fallback renderer.");
+    }
+
     return $html;
+}
+
+function fetch_via_render_api($url, $waitMs, $renderApiTemplate) {
+    $renderUrl = str_replace(
+        ['{url}', '{wait_ms}'],
+        [urlencode($url), (string)$waitMs],
+        $renderApiTemplate
+    );
+
+    $opts = [
+        'http' => [
+            'method' => 'GET',
+            'header' => "User-Agent: php-watch-script/2.1\r\n",
+            'timeout' => 45
+        ]
+    ];
+
+    $context = stream_context_create($opts);
+    $html = @file_get_contents($renderUrl, false, $context);
+    if (is_string($html) && trim($html) !== '') {
+        return $html;
+    }
+
+    return null;
+}
+
+// Function to fetch rendered HTML (supports AJAX content)
+function fetch_rendered_html($url, $waitSeconds = 2, $renderApiTemplate = '') {
+    $waitMs = max(0, (int)$waitSeconds * 1000);
+    $renderApiTemplate = is_string($renderApiTemplate) ? trim($renderApiTemplate) : '';
+
+    // cPanel-friendly option: external render service URL template from config.php
+    // Example: https://your-render-service/render?url={url}&wait={wait_ms}
+    if ($renderApiTemplate !== '') {
+        $html = fetch_via_render_api($url, $waitMs, $renderApiTemplate);
+        if ($html !== null) {
+            return $html;
+        }
+    }
+
+    // Local browser path (works only if host allows shell_exec + has Chromium/Chrome installed)
+    if (is_shell_exec_available()) {
+        $browsers = ['chromium-browser', 'chromium', 'google-chrome', 'google-chrome-stable'];
+
+        foreach ($browsers as $browser) {
+            $browserPath = trim((string)@shell_exec("command -v $browser"));
+            if ($browserPath === '') {
+                continue;
+            }
+
+            $cmd = sprintf(
+                '%s --headless=new --disable-gpu --no-sandbox --virtual-time-budget=%d --dump-dom %s 2>/dev/null',
+                escapeshellarg($browserPath),
+                $waitMs,
+                escapeshellarg($url)
+            );
+
+            $html = @shell_exec($cmd);
+            if (is_string($html) && trim($html) !== '') {
+                return $html;
+            }
+        }
+    }
+
+    // Final fallback: remote renderer
+    return fetch_remote_html($url);
 }
 
 // Function to log events
@@ -57,7 +139,7 @@ foreach ($sites as $site) {
 
     try {
         echo "Fetching rendered page: $name\n";
-        $html = fetch_rendered_html($url, $wait_seconds);
+        $html = fetch_rendered_html($url, $wait_seconds, $render_api_template ?? '');
     } catch (Exception $e) {
         $msg = "Fetch error for $name: " . $e->getMessage();
         echo $msg . "\n";

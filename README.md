@@ -36,5 +36,23 @@ Every change is logged, the HTML is saved, and notifications are sent via **ntfy
 - PHP 7.4+
 - Writable `storage` folder
 - Internet access to fetch site HTML and send ntfy notifications
+- (Recommended) Chromium/Google Chrome for pages that load data with AJAX
+
+### AJAX-aware scraping
+If a website loads content after the initial HTML (AJAX), the script tries these methods in order:
+1. `render_api_template` (if you configure it)
+2. Local headless browser (`chromium`/`google-chrome`) when available
+3. `r.jina.ai` fallback
+
+Example:
+
+```php
+$wait_seconds = 5; // wait longer for slow AJAX responses
+$render_api_template = ''; // optional: https://your-render-service/render?url={url}&wait={wait_ms}
+```
+
+### cPanel note
+On normal shared cPanel hosting, `shell_exec` is usually disabled and Chrome/Chromium is usually unavailable.
+So the script will still run, but truly JS-rendered pages may need an external render API (`$render_api_template`) for best results.
 
 ---

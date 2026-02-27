@@ -4,6 +4,15 @@ require 'config.php';
 $storageDir = __DIR__ . '/storage';
 $logFile = "$storageDir/watch.log";
 
+function build_config_content($sites, $ntfyTopic, $waitSeconds, $renderApiTemplate) {
+    return "<?php\n"
+        . "\$sites = " . var_export($sites, true) . ";\n"
+        . "//we use ntfy.sh for notifications\n"
+        . "\$ntfy_topic = " . var_export($ntfyTopic, true) . ";\n"
+        . "\$wait_seconds = " . (int)$waitSeconds . ";\n"
+        . "\$render_api_template = " . var_export((string)$renderApiTemplate, true) . ";\n";
+}
+
 // Function to get status of each site
 function get_status($site) {
     $key = hash('sha256', $site['url']);
@@ -33,7 +42,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'name' => trim($_POST['new_site_name'])
         ];
         $sites[] = $newSite;
-        file_put_contents('config.php', "<?php\n\$sites = " . var_export($sites, true) . ";\n\$ntfy_topic = 'timetunnel';\n\$wait_seconds = 2;\n");
+        file_put_contents('config.php', build_config_content(
+            $sites,
+            $ntfy_topic,
+            $wait_seconds,
+            $render_api_template ?? ''
+        ));
         header("Location: ".$_SERVER['PHP_SELF']);
         exit;
     }
@@ -60,7 +74,12 @@ if (isset($_POST['delete_site_index'])) {
         }
         // Remove from array and save config
         array_splice($sites, $index, 1);
-        file_put_contents('config.php', "<?php\n\$sites = " . var_export($sites, true) . ";\n\$ntfy_topic = 'timetunnel';\n\$wait_seconds = 2;\n");
+        file_put_contents('config.php', build_config_content(
+            $sites,
+            $ntfy_topic,
+            $wait_seconds,
+            $render_api_template ?? ''
+        ));
     }
     header("Location: ".$_SERVER['PHP_SELF']);
     exit;
