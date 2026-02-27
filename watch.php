@@ -86,7 +86,7 @@ function fetch_with_curl($url, $timeout = 30) {
     return null;
 }
 
-function fetch_remote_html($url) {
+function fetch_remote_html($url, &$methodUsed = null) {
     // Try both URL styles because some hosts/proxies are picky.
     $renderCandidates = [
         "https://r.jina.ai/http://" . preg_replace('#^https?://#', '', $url),
@@ -96,11 +96,13 @@ function fetch_remote_html($url) {
     foreach ($renderCandidates as $renderUrl) {
         $html = fetch_with_file_get_contents($renderUrl, 30);
         if ($html !== null) {
+            $methodUsed = "r.jina.ai:file_get_contents";
             return $html;
         }
 
         $html = fetch_with_curl($renderUrl, 30);
         if ($html !== null) {
+            $methodUsed = "r.jina.ai:curl";
             return $html;
         }
     }
@@ -108,18 +110,20 @@ function fetch_remote_html($url) {
     // Last resort: fetch original URL directly so check process does not stop on cPanel.
     $html = fetch_with_file_get_contents($url, 30);
     if ($html !== null) {
+        $methodUsed = "direct:file_get_contents";
         return $html;
     }
 
     $html = fetch_with_curl($url, 30);
     if ($html !== null) {
+        $methodUsed = "direct:curl";
         return $html;
     }
 
     throw new Exception("Failed to fetch page from all fallback methods.");
 }
 
-function fetch_via_render_api($url, $waitMs, $renderApiTemplate) {
+function fetch_via_render_api($url, $waitMs, $renderApiTemplate, &$methodUsed = null) {
     $renderUrl = str_replace(
         ['{url}', '{wait_ms}'],
         [urlencode($url), (string)$waitMs],
@@ -137,6 +141,7 @@ function fetch_via_render_api($url, $waitMs, $renderApiTemplate) {
     $context = stream_context_create($opts);
     $html = @file_get_contents($renderUrl, false, $context);
     if (is_string($html) && trim($html) !== '') {
+        $methodUsed = "render_api";
         return $html;
     }
 
@@ -147,13 +152,14 @@ function fetch_via_render_api($url, $waitMs, $renderApiTemplate) {
 function fetch_rendered_html($url, $waitSeconds = 2, $renderApiTemplate = '') {
     $waitMs = max(0, (int)$waitSeconds * 1000);
     $renderApiTemplate = is_string($renderApiTemplate) ? trim($renderApiTemplate) : '';
+    $methodUsed = null;
 
     // cPanel-friendly option: external render service URL template from config.php
     // Example: https://your-render-service/render?url={url}&wait={wait_ms}
     if ($renderApiTemplate !== '') {
-        $html = fetch_via_render_api($url, $waitMs, $renderApiTemplate);
+        $html = fetch_via_render_api($url, $waitMs, $renderApiTemplate, $methodUsed);
         if ($html !== null) {
-            return $html;
+            return ['html' => $html, 'method' => $methodUsed];
         }
     }
 
@@ -176,13 +182,14 @@ function fetch_rendered_html($url, $waitSeconds = 2, $renderApiTemplate = '') {
 
             $html = @shell_exec($cmd);
             if (is_string($html) && trim($html) !== '') {
-                return $html;
+                return ['html' => $html, 'method' => "headless_browser:$browser"];
             }
         }
     }
 
     // Final fallback: remote renderer
-    return fetch_remote_html($url);
+    $html = fetch_remote_html($url, $methodUsed);
+    return ['html' => $html, 'method' => $methodUsed ?? 'unknown'];
 }
 
 // Function to log events
@@ -201,7 +208,11 @@ foreach ($sites as $site) {
 
     try {
         echo "Fetching rendered page: $name\n";
-        $html = fetch_rendered_html($url, $wait_seconds, $render_api_template ?? '');
+        $result = fetch_rendered_html($url, $wait_seconds, $render_api_template ?? '');
+        $html = $result['html'];
+        $method = $result['method'];
+        echo "Method used: $method\n";
+        log_event($logFile, "[$name] Fetch method: $method");
     } catch (Exception $e) {
         $msg = "Fetch error for $name: " . $e->getMessage();
         echo $msg . "\n";

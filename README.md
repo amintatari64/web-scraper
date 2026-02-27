@@ -45,6 +45,8 @@ If a website loads content after the initial HTML (AJAX), the script tries these
 3. `r.jina.ai` fallback
 4. Direct fetch from original URL as a final safety fallback
 
+Each run logs the fetch method used, so you can debug hosting/network limitations from `storage/watch.log`.
+
 Example:
 
 ```php
