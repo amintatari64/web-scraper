@@ -38,23 +38,85 @@ function is_shell_exec_available() {
     return !in_array('shell_exec', $disabledFunctions, true);
 }
 
-function fetch_remote_html($url) {
-    $renderUrl = "https://r.jina.ai/" . urlencode($url);
+function fetch_with_file_get_contents($url, $timeout = 30) {
     $opts = [
         'http' => [
             'method' => 'GET',
-            'header' => "User-Agent: php-watch-script/2.1\r\n",
-            'timeout' => 30
+            'header' => "User-Agent: php-watch-script/2.2\r\n",
+            'timeout' => $timeout,
+            'ignore_errors' => true
+        ],
+        'ssl' => [
+            'verify_peer' => true,
+            'verify_peer_name' => true
         ]
     ];
 
     $context = stream_context_create($opts);
-    $html = @file_get_contents($renderUrl, false, $context);
-    if ($html === false) {
-        throw new Exception("Failed to fetch page from fallback renderer.");
+    $html = @file_get_contents($url, false, $context);
+    if (is_string($html) && trim($html) !== '') {
+        return $html;
     }
 
-    return $html;
+    return null;
+}
+
+function fetch_with_curl($url, $timeout = 30) {
+    if (!function_exists('curl_init')) {
+        return null;
+    }
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_CONNECTTIMEOUT => 15,
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_USERAGENT => 'php-watch-script/2.2'
+    ]);
+
+    $html = curl_exec($ch);
+    $error = curl_error($ch);
+    curl_close($ch);
+
+    if ($error === '' && is_string($html) && trim($html) !== '') {
+        return $html;
+    }
+
+    return null;
+}
+
+function fetch_remote_html($url) {
+    // Try both URL styles because some hosts/proxies are picky.
+    $renderCandidates = [
+        "https://r.jina.ai/http://" . preg_replace('#^https?://#', '', $url),
+        "https://r.jina.ai/" . urlencode($url)
+    ];
+
+    foreach ($renderCandidates as $renderUrl) {
+        $html = fetch_with_file_get_contents($renderUrl, 30);
+        if ($html !== null) {
+            return $html;
+        }
+
+        $html = fetch_with_curl($renderUrl, 30);
+        if ($html !== null) {
+            return $html;
+        }
+    }
+
+    // Last resort: fetch original URL directly so check process does not stop on cPanel.
+    $html = fetch_with_file_get_contents($url, 30);
+    if ($html !== null) {
+        return $html;
+    }
+
+    $html = fetch_with_curl($url, 30);
+    if ($html !== null) {
+        return $html;
+    }
+
+    throw new Exception("Failed to fetch page from all fallback methods.");
 }
 
 function fetch_via_render_api($url, $waitMs, $renderApiTemplate) {

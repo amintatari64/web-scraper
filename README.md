@@ -43,6 +43,7 @@ If a website loads content after the initial HTML (AJAX), the script tries these
 1. `render_api_template` (if you configure it)
 2. Local headless browser (`chromium`/`google-chrome`) when available
 3. `r.jina.ai` fallback
+4. Direct fetch from original URL as a final safety fallback
 
 Example:
 
